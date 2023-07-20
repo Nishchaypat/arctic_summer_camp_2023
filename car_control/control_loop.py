@@ -1,9 +1,15 @@
-import cv2
-import matplotlib.image as mpimg
-import matplotlib.pyplot as plt
-from jetson.utils import videoSource, videoOutput
-import numpy as np
 
+import cv2
+from jetson.utils import videoSource, videoOutput, cudaToNumpy, cudaDeviceSynchronize
+from lane_detection import *
+
+from time import perf_counter, sleep
+
+
+from serial_car_control import SerialController
+sc = SerialController("/dev/ttyUSB0", 9600, 0.1, 100)
+camera = videoSource("csi://0")
+cudaDeviceSynchronize()
 
 
 def correct_dist(initial_img):
@@ -95,170 +101,50 @@ def get_midpoint_for_given_lanes(lane_dict):
     average=(np.sum(arr)/len(lane_dict[first_key]))
     x,y = average,first_key
     return x,y
-camera = videoSource("csi://0")  # '/dev/video0' for V4L2
-display = videoOutput("display://0")  # 'my_video.mp4' for file
+
+#camera = videoSource("csi://0")  # '/dev/video0' for V4L2
+#display = videoOutput("display://0")  # 'my_video.mp4' for file
 stepy = 50
 x1 = 0
 x2 = 1280
+
 X=0
 Y=0
 E=0
-
-#LANE DETECTION
-
-
-import serial
-import json
-from time import sleep
-from typing import Union, List
-
-
-class SerialController:
-    def __init__(
-        self,
-        com_port: str,
-        baudrate: int,
-        timeout: int,
-        default_speed: int,
-    ):
-        self.ser = serial.Serial(com_port, baudrate, timeout=timeout)
-
-        self.default_speed = default_speed
-        self.ser.readlines()
-
-    def close_connection(self):
-        self.stop()
-        self.ser.close()
-
-    def stop(self):
-        payload = self.__build_payload(100)
-        self.ser.write(payload)
-        self.ser.readline()
-
-    def get_yaw(self) -> float:
-        payload = self.__build_payload(120)
-        if self.ser.in_waiting > 0:
-            self.ser.readall()
-        self.ser.write(payload)
-        try:
-            return float(self.ser.readline())
-        except ValueError:
-            return None
-
-    def set_left_and_right(self, left: int, right: int):
-        payload = self.__build_payload(4, [right, left])
-        self.ser.write(payload)
-        self.ser.readline()
-
-    def forward(self, time: Union[float, None] = None, speed: Union[int, None] = None):
-        self.__movement(1, time, speed)
-
-    def back(self, time: Union[float, None] = None, speed: Union[int, None] = None):
-        self.__movement(2, time, speed)
-
-    def turn_left(
-        self, time: Union[float, None] = None, speed: Union[int, None] = None
-    ):
-        self.__movement(3, time, speed)
-
-    def turn_right(
-        self, time: Union[float, None] = None, speed: Union[int, None] = None
-    ):
-        self.__movement(4, time, speed)
-
-    def left_front(
-        self, time: Union[float, None] = None, speed: Union[int, None] = None
-    ):
-        self.__movement(5, time, speed)
-
-    def rear_left(
-        self, time: Union[float, None] = None, speed: Union[int, None] = None
-    ):
-        self.__movement(6, time, speed)
-
-    def right_front(
-        self, time: Union[float, None] = None, speed: Union[int, None] = None
-    ):
-        self.__movement(7, time, speed)
-
-    def rear_right(self, time: Union[float, int, None], speed: Union[int, None] = None):
-        self.__movement(8, time, speed)
-
-    def __movement(
-        self,
-        direction: int,
-        time: Union[float, None] = None,
-        speed: Union[int, None] = None,
-    ):
-        if not speed:
-            speed = self.default_speed
-        payload = self.__build_payload(102, [direction, speed])
-        self.ser.write(payload)
-        self.ser.readline()
-        if time:
-            sleep(time)
-            self.stop()
-
-    def __build_payload(
-        self, input_type: int, parameters: Union[List[int], None] = None
-    ):
-        payload = {"N": input_type}
-        if parameters:
-            for index, parameter in enumerate(parameters, start=1):
-                payload["D" + str(index)] = parameter
-
-        return json.dumps(payload).encode("ascii")
-
-
-
-#SERIAL CAR CONTROL
-
-
-import cv2
-from jetson.utils import videoSource, videoOutput, cudaToNumpy, cudaDeviceSynchronize
-
-from time import perf_counter, sleep
-
-from serial_car_control import SerialController
-sc = SerialController("/dev/ttyUSB0", 9600, 0.1, 100)
-camera = videoSource("csi://0")
-cudaDeviceSynchronize()
-
+def flip_image(img):
+    return cv2.flip(img,0)
 while True:
+	img = camera.Capture()
+	array = cudaToNumpy(img)
+	try:
+		count = 1
+		#img = cv2.imread()
+		img = flip_image(array)
+		#img = camera.Capture()
+		img = correct_dist(img)
+		img = bgr2rgb(img)
+		img = get_roi_image(img)      
+		h,w,channels = img.shape
+		img = find_green_lanes(img)
+		img = rgb_to_grayscale(img)
+		xy_dict = get_x_value_for_given_y(img,stepy,x1,x2,h)
+		xy_dict = get_x_value_for_given_lanes(xy_dict, x1)
+		x, y = get_midpoint_for_given_lanes(xy_dict)
+		X=x
+		Y=y
+		E=0
+	except Exception as e:
+		print(e)
+		E=-1
 
-    imga = camera.Capture()
-    array = cudaToNumpy(imga)
-    try:
-        count = 1
-        img = cv2.imread("imga")
-        img = flip_image(array)
-        #img = camera.Capture()
-        img = correct_dist(img)
-        img = bgr2rgb(img)
-        img = get_roi_image(img)      
-        h,w,channels = img.shape
-        img = find_green_lanes(img)
-        plt.imshow(img)
-        img = rgb_to_grayscale(img)
-        xy_dict = get_x_value_for_given_y(img,stepy,x1,x2,h)
-        xy_dict = get_x_value_for_given_lanes(xy_dict, x1)
-        x, y = get_midpoint_for_given_lanes(xy_dict)
-        X=x
-        Y=y       
-
-    except Exception as e:
-        E=-1
-    
-    # Detect the lane (hints are in Day2/Morning-Session-1/lane_detection.ipynb)
-    if (E!=-1):
-        sc.forward
-    # then use sc control methods to drive.
-    if(E==-1):
-        sc.stop()
+# then use sc control methods to drive.
+	if E!=-1:
+		print(X,Y)
+		sc.forward(2)
+	elif E==-1:
+		print('Stop')
+		sc.stop()
 # make sure you account for no lane and properly stop the car via 
 
 sc.stop()
 
-
-
-#MAIN LOOP
