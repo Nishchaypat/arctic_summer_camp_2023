@@ -6,7 +6,7 @@ from time import perf_counter, sleep
 
 
 from serial_car_control import SerialController
-sc = SerialController("/dev/ttyUSB0", 9600, 0.1, 100)
+sc = SerialController("/dev/ttyUSB0", 9600, 0.1, 90)
 camera = videoSource("csi://0")
 cudaDeviceSynchronize()
 
@@ -138,11 +138,11 @@ while True:
 
 # then use sc control methods to drive.
 	if E!=-1:
-		print(X,Y)
-		sc.forward(2)
-	elif E==-1:
+		print(f'x:{X}, y:{Y}')
+		sc.forward(10)
+	if E==-1:
 		print('Stop')
-		sc.stop()
+		sc.stop(100)
+    
 # make sure you account for no lane and properly stop the car via 
 
-sc.stop()

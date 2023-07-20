@@ -5,10 +5,6 @@ import numpy as np
 
 
 class LaneDetection:
-    def __init__(self, stepy: int = 50, x1: int = 0, x2: int = 1280):
-        self.stepy = stepy
-        self.x1 = x1
-        self.x2 = x2
 
     def correct_dist(self, initial_img):
         k = [
